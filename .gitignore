@@ -35,3 +35,4 @@ Thumbs.db
 *.env.local
 docs/
 scripts/
+current_prod.yml

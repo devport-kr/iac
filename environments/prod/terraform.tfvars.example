@@ -1,0 +1,16 @@
+# DevPort Production Environment Variables
+# Copy this file to terraform.tfvars and update the values
+
+# Domain Configuration
+domain_name         = "devport.kr"
+create_route53_zone = false          # Set to true if creating new zone
+route53_zone_id     = "ZXXXXXXXXXX"  # Your existing zone ID
+
+# Security
+ssh_allowed_cidr = "YOUR_IP/32"  # Replace with your IP address
+
+# Database (required)
+db_password = "CHANGE_ME_TO_SECURE_PASSWORD"  # Sensitive - use a strong password
+
+# Monitoring
+alarm_email = "your-email@example.com"

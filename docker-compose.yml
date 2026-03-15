@@ -1,0 +1,230 @@
+services:
+
+  # ── Nginx reverse proxy ────────────────────────────────────────────────────
+  # NLB terminates TLS with ACM cert. Nginx speaks plain HTTP on port 80,
+  # mapped to host 8080 so NLB can reach it.
+  # upstream.conf is NOT :ro — deploy script rewrites it and sends nginx -s reload
+  # for zero-downtime blue-green swaps.
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: devport-nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - /opt/devport/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /opt/devport/nginx/upstream.conf:/etc/nginx/conf.d/upstream.conf
+      - /opt/devport/nginx-logs:/var/log/nginx
+    depends_on:
+      devport-api-blue:
+        condition: service_healthy
+    networks:
+      - devport-network
+
+  # ── Spring Boot — blue slot (stable, always-on) ───────────────────────────
+  # Blue is the permanent production slot.
+  # After every deploy, blue ends up running the latest image.
+  devport-api-blue:
+    image: ghcr.io/devport-kr/devport-api:latest-native-arm64
+    container_name: devport-api-blue
+    restart: unless-stopped
+    pull_policy: always
+    expose:
+      - "8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+
+      # Database Connection
+      SPRING_DATASOURCE_URL:
+      SPRING_DATASOURCE_USERNAME: 
+      SPRING_DATASOURCE_PASSWORD: 
+
+      # Redis Connection
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+
+      # JWT Configuration
+      JWT_SECRET: 
+      JWT_EXPIRATION: 3600000  # 1 hour
+      JWT_REFRESH_EXPIRATION: 2592000000  # 30 days
+
+      # OAuth2 - GitHub
+      GITHUB_CLIENT_ID: 
+      GITHUB_CLIENT_SECRET: 
+
+      # OAuth2 - Google
+      GOOGLE_CLIENT_ID: 
+      GOOGLE_CLIENT_SECRET:
+
+      NAVER_CLIENT_ID:
+      NAVER_CLIENT_SECRET: 
+
+      # Cloudflare Turnstile
+      CLOUDFLARE_TURNSTILE_SECRET_KEY: 
+
+      OPENAI_API_KEY:
+
+      # Application Config
+      FRONTEND_URL: https://devport.kr
+
+      # CloudWatch Config
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
+      ENVIRONMENT: production
+
+      THC_PATH: /actuator/health/liveness
+
+    volumes:
+      - /opt/devport/logs:/var/log/devport
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/workspace/health-check"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - devport-network
+
+  # ── Spring Boot — green slot (deploy-only, temporary) ─────────────────────
+  # profiles: ["green"] prevents it from starting on a plain `docker compose up`.
+  # Only the deploy script starts and stops this container.
+  devport-api-green:
+    image: ghcr.io/devport-kr/devport-api:latest-native-arm64
+    container_name: devport-api-green
+    restart: "no"
+    pull_policy: always
+    profiles: ["green"]
+    expose:
+      - "8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+
+      # Database Connection
+      SPRING_DATASOURCE_URL:
+      SPRING_DATASOURCE_USERNAME: 
+      SPRING_DATASOURCE_PASSWORD: 
+
+      # Redis Connection
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+
+      # JWT Configuration
+      JWT_SECRET: 
+      JWT_EXPIRATION: 3600000  # 1 hour
+      JWT_REFRESH_EXPIRATION: 2592000000  # 30 days
+
+      # OAuth2 - GitHub
+      GITHUB_CLIENT_ID: 
+      GITHUB_CLIENT_SECRET: 
+
+      # OAuth2 - Google
+      GOOGLE_CLIENT_ID:
+      GOOGLE_CLIENT_SECRET:
+
+      NAVER_CLIENT_ID:
+      NAVER_CLIENT_SECRET: 
+
+      # Cloudflare Turnstile
+      CLOUDFLARE_TURNSTILE_SECRET_KEY: 
+
+      OPENAI_API_KEY: 
+
+      # Application Config
+      FRONTEND_URL: https://devport.kr
+
+      # CloudWatch Config
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
+      ENVIRONMENT: production
+
+      THC_PATH: /actuator/health/liveness
+
+    volumes:
+      - /opt/devport/logs:/var/log/devport
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/workspace/health-check"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - devport-network
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: devport-postgres-native
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: 
+      POSTGRES_USER: 
+      POSTGRES_PASSWORD: 
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devport_user -d devportdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - devport-network
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: devport-redis-native
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - devport-network
+
+  # ── pgAdmin (optional) ─────────────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: devport-pgadmin-native
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: 
+      PGADMIN_DEFAULT_PASSWORD: 
+      PGADMIN_CONFIG_SERVER_MODE: 
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - devport-network
+
+networks:
+  devport-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
