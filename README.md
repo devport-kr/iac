@@ -76,26 +76,26 @@ DevPort 프로젝트의 Terraform 인프라 구성입니다.
 ### 배포 흐름
 
 ```
-  GitHub Actions (main push)
-        │
-        ▼
-  AWS SSM RunShellScript ──▶ EC2
-        │
-        ▼
-  ┌─────────────────────────────────────────────────────┐
-  │  1. GHCR 로그인                                      │
-  │  2. Green 이미지 pull & 컨테이너 시작                 │
-  │  3. Green 헬스체크 (최대 30초)                        │
-  │     └─ 실패 시: Green 제거, Blue 유지, 배포 중단      │
-  │  4. Nginx upstream → Green 전환 (nginx -s reload)    │
-  │     └─ 이 시점부터 트래픽은 Green으로                  │
-  │  5. Blue 중지 → 새 이미지 pull → Blue 재시작          │
-  │  6. Blue 헬스체크 (최대 30초)                         │
-  │     └─ 실패 시: Green이 계속 서빙                     │
-  │  7. Nginx upstream → Blue 전환 (nginx -s reload)     │
-  │  8. Green 중지 & 제거                                 │
-  │  9. 완료 — Blue가 최신 이미지로 서빙                   │
-  └─────────────────────────────────────────────────────┘
+  GitHub Actions (main push / workflow_dispatch)
+        |
+        v
+  AWS SSM RunShellScript --> EC2
+        |
+        v
+  +-------------------------------------------------------------+
+  |  1. GHCR login                                              |
+  |  2. Pull green image & start container                      |
+  |  3. Health check green (max 30s)                            |
+  |     +-- FAIL: remove green, blue stays, abort deploy        |
+  |  4. Nginx upstream -> green (nginx -s reload)               |
+  |     +-- traffic now goes to green                           |
+  |  5. Stop blue -> pull new image -> restart blue             |
+  |  6. Health check blue (max 30s)                             |
+  |     +-- FAIL: green keeps serving                           |
+  |  7. Nginx upstream -> blue (nginx -s reload)                |
+  |  8. Stop & remove green                                     |
+  |  9. Done -- blue serves latest image                        |
+  +-------------------------------------------------------------+
 ```
 
 ### 핵심 포인트
