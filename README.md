@@ -14,14 +14,14 @@ DevPort 프로젝트의 Terraform 인프라 구성입니다.
 └──────────┘    └────────────┘      │  └───────────────┘         │   ┌─────────────────┐   │  │
       │                             │                            │   │  Docker Compose │   │  │
       │                             │  ┌───────────────┐         │   │  ┌─────┐ ┌────┐ │   │  │
-      │         ┌───────┐           │  │  NAT Instance │◀────────│   │  │ App │ │ DB │ │   │  │
-      └────────▶│  NLB  │──────────▶│  │  (t4g.nano)   │         │   │  └─────┘ └────┘ │   │  │
-                └───────┘           │  └───────────────┘         │   └─────────────────┘   │  │
-                (SSL termination)   │                            │                         │  │
-                                    │                            │  ┌─────────────────────┐│  │
-                                    │                            │  │   Lambda Crawler    ││  │
-                                    │                            │  │   (VPC-attached)    ││  │
-                                    │                            │  └─────────────────────┘│  │
+      │                             │  │  NAT Instance │◀────────│   │  │ App │ │ DB │ │   │  │
+      │         ┌───────────────┐   │  │  (t4g.nano)   │         │   │  └─────┘ └────┘ │   │  │
+      └────────▶│  Proxy EC2    │──▶│  └───────────────┘         │   └─────────────────┘   │  │
+                │  (t4g.nano)   │   │                            │                         │  │
+                │  Elastic IP   │   │                            │  ┌─────────────────────┐│  │
+                │  Nginx + TLS  │   │                            │  │   Lambda Crawler    ││  │
+                └───────────────┘   │                            │  │   (VPC-attached)    ││  │
+                (SSL termination)   │                            │  └─────────────────────┘│  │
                                     │                            └─────────────────────────┘  │
                                     └─────────────────────────────────────────────────────────┘
 
@@ -38,6 +38,24 @@ DevPort 프로젝트의 Terraform 인프라 구성입니다.
                                   └──────────────────────────────────────────┘
 ```
 
+### 트래픽 흐름
+
+```
+Client ──▶ Route 53 (api.devport.kr)
+              │
+              ▼
+        Proxy EC2 (Public Subnet)
+        Elastic IP + Nginx
+        TLS termination (Let's Encrypt)
+              │
+              ▼  HTTP :8080
+        Private EC2 (Private Subnet)
+        Nginx (Blue-Green switching)
+              │
+              ▼
+        App Container (:8080)
+```
+
 ## 구성 요소
 
 | 구성 요소                     | 목적                                              |
@@ -45,13 +63,13 @@ DevPort 프로젝트의 Terraform 인프라 구성입니다.
 | **Route 53**            | DNS 관리                                          |
 | **CloudFront**          | CDN + 프론트엔드 HTTPS                            |
 | **S3**                  | 정적 프론트엔드 호스팅                            |
-| **NLB**                 | API 로드 밸런서 + SSL 터미네이션                  |
+| **Proxy EC2**           | 퍼블릭 서브넷의 리버스 프록시 + TLS 터미네이션    |
 | **NAT Instance**        | 프라이빗 서브넷의 아웃바운드 인터넷               |
 | **EC2**                 | Docker Compose (앱 + PostgreSQL), 프라이빗 서브넷 |
 | **Lambda**              | VPC 연결 크롤러, DB 직접 접근                     |
 | **EventBridge**         | 크롤러 크론 스케줄러                              |
 | **GitHub Actions OIDC** | CI/CD 인증 (devport-web → S3/CloudFront 배포)    |
-| **Nginx**               | 리버스 프록시, Blue-Green 트래픽 전환             |
+| **Nginx (Private)**     | 리버스 프록시, Blue-Green 트래픽 전환             |
 | **Redis**               | 캐시 및 세션 저장소                               |
 
 ---
@@ -141,7 +159,7 @@ upstream devport_api {
 
 - [ ] AWS CLI 설치 및 설정 (`aws configure`)
 - [ ] Terraform >= 1.5.0 설치 (`terraform --version`)
-- [ ] AWS 권한: VPC, EC2, S3, CloudFront, Lambda, Route 53, ACM, NLB, IAM, Secrets Manager
+- [ ] AWS 권한: VPC, EC2, S3, CloudFront, Lambda, Route 53, ACM, IAM, Secrets Manager
 
 ### 2. Route 53 설정 (택 1)
 
@@ -209,8 +227,8 @@ cp terraform.tfvars.example terraform.tfvars
 | ---------------------- | ------ | ---------------------- | -------------------- |
 | `domain_name`        | 예     | 도메인                 | `devport.kr`       |
 | `route53_zone_id`    | 예*    | 기존 Zone ID           | `Z1234567890ABC`   |
-| `ssh_allowed_cidr`   | 예     | SSH 허용 IP            | `203.0.113.50/32`  |
 | `db_password`        | 예     | PostgreSQL 비밀번호    | 강력한 비밀번호 사용 |
+| `certbot_email`      | 예     | Let's Encrypt 이메일   | `you@example.com`  |
 | `alarm_email`        | 아니오 | CloudWatch 알림 이메일 | `you@example.com`  |
 | `psycopg2_layer_arn` | 아니오 | Lambda DB 접속 레이어  | 아래 참고            |
 
@@ -272,7 +290,24 @@ terraform apply
 - [ ] 이메일 수신함에서 "AWS Notification - Subscription Confirmation" 확인
 - [ ] **"Confirm subscription"** 링크 클릭
 
-### 4. EC2 애플리케이션 설정
+### 4. Proxy EC2 확인
+
+```bash
+# Terraform 출력에서 프록시 정보 확인
+terraform output proxy_instance_id
+terraform output proxy_elastic_ip
+
+# SSM으로 프록시 접속
+aws ssm start-session --target <proxy-instance-id>
+
+# 프록시에서 확인:
+sudo cat /var/log/user-data.log | tail -10   # 셋업 로그
+sudo ls /etc/letsencrypt/live/api.devport.kr/ # 인증서 확인
+systemctl status nginx                        # nginx 상태
+curl -sk https://localhost -H 'Host: api.devport.kr' # 로컬 테스트
+```
+
+### 5. EC2 애플리케이션 설정
 
 ```bash
 # Terraform 출력에서 인스턴스 ID 확인
@@ -293,14 +328,14 @@ sudo docker-compose up -d
 sudo docker-compose ps
 ```
 
-### 5. 프론트엔드 배포
+### 6. 프론트엔드 배포
 
 ```bash
 cd scripts
 ./deploy-frontend.sh prod /path/to/your/frontend/build
 ```
 
-### 6. Lambda 크롤러 테스트
+### 7. Lambda 크롤러 테스트
 
 ```bash
 # 수동 실행
@@ -311,10 +346,10 @@ cat response.json
 aws logs tail /aws/lambda/devport-prod-crawler --follow
 ```
 
-### 7. 최종 확인
+### 8. 최종 확인
 
 - [ ] 프론트엔드 로드: `https://yourdomain.com`
-- [ ] API 응답: `https://api.yourdomain.com/health`
+- [ ] API 응답: `https://api.yourdomain.com/actuator/health/readiness`
 - [ ] WWW 리다이렉트: `https://www.yourdomain.com`
 - [ ] EC2에서 DB 접근: `sudo docker-compose exec db psql -U devport -d devport_db`
 - [ ] 크롤러 DB 기록 성공
@@ -325,7 +360,8 @@ aws logs tail /aws/lambda/devport-prod-crawler --follow
 
 | 작업                | 명령어                                                                     |
 | ------------------- | -------------------------------------------------------------------------- |
-| EC2 접속            | `aws ssm start-session --target <instance-id>`                           |
+| App EC2 접속        | `aws ssm start-session --target <instance-id>`                           |
+| Proxy EC2 접속      | `aws ssm start-session --target <proxy-instance-id>`                     |
 | 앱 로그 확인        | `sudo docker-compose logs -f app`                                        |
 | DB 로그 확인        | `sudo docker-compose logs -f db`                                         |
 | 서비스 재시작       | `sudo docker-compose restart`                                            |
@@ -341,8 +377,8 @@ devport-iac/
 ├── modules/
 │   ├── networking/        # VPC, 서브넷, NAT 인스턴스, 보안 그룹
 │   ├── ec2/               # EC2 인스턴스, IAM, CloudWatch
+│   ├── proxy/             # 퍼블릭 리버스 프록시 EC2, Elastic IP
 │   ├── s3-cloudfront/     # S3 버킷, CloudFront 배포
-│   ├── nlb/               # Network Load Balancer
 │   ├── lambda-crawler/    # Lambda 함수, EventBridge
 │   └── acm/               # SSL 인증서
 ├── environments/
@@ -371,7 +407,7 @@ VPC, 퍼블릭/프라이빗 서브넷, NAT Instance를 생성합니다.
 
 | 리소스         | 설명                                                                |
 | -------------- | ------------------------------------------------------------------- |
-| Public Subnet  | NLB, NAT Instance                                                   |
+| Public Subnet  | Proxy EC2, NAT Instance                                             |
 | Private Subnet | EC2, Lambda                                                         |
 | NAT Instance   | 아웃바운드 트래픽용 t4g.nano (~$3/월, NAT Gateway $32/월 대비 절약) |
 
@@ -380,8 +416,24 @@ VPC, 퍼블릭/프라이빗 서브넷, NAT Instance를 생성합니다.
 | `vpc_id`                   | VPC ID             |
 | `public_subnet_id`         | 퍼블릭 서브넷 ID   |
 | `private_subnet_id`        | 프라이빗 서브넷 ID |
+| `proxy_security_group_id`  | Proxy 보안 그룹    |
 | `ec2_security_group_id`    | EC2 보안 그룹      |
 | `lambda_security_group_id` | Lambda 보안 그룹   |
+
+### Proxy 모듈
+
+퍼블릭 서브넷에 리버스 프록시 EC2를 프로비저닝합니다:
+
+- Amazon Linux 2023 (ARM/Graviton), t4g.nano
+- Nginx로 TLS 터미네이션 (Let's Encrypt, DNS-01 challenge)
+- Elastic IP로 고정 퍼블릭 IP
+- Route 53 A 레코드가 Elastic IP를 직접 가리킴
+- 프라이빗 EC2의 :8080으로 HTTP 프록시
+
+| 출력              | 설명                  |
+| ----------------- | --------------------- |
+| `instance_id`   | Proxy 인스턴스 ID     |
+| `elastic_ip`    | Proxy Elastic IP 주소 |
 
 ### EC2 모듈
 
@@ -391,12 +443,12 @@ VPC, 퍼블릭/프라이빗 서브넷, NAT Instance를 생성합니다.
 - Docker + Docker Compose 사전 설치
 - CloudWatch, S3용 IAM 역할
 - CloudWatch 알람
+- Proxy 보안 그룹에서만 :8080 인바운드 허용
 
-| 출력                       | 설명                       |
-| -------------------------- | -------------------------- |
-| `instance_id`            | EC2 인스턴스 ID            |
-| `instance_private_ip`    | 프라이빗 IP 주소           |
-| `private_key_secret_arn` | SSH 키 Secrets Manager ARN |
+| 출력                    | 설명             |
+| ----------------------- | ---------------- |
+| `instance_id`         | EC2 인스턴스 ID  |
+| `instance_private_ip` | 프라이빗 IP 주소 |
 
 ### Lambda Crawler 모듈
 
@@ -429,9 +481,8 @@ GitHub Actions에서 AWS로의 키 없는(keyless) 인증을 설정합니다:
 | ----------------------- | -------------------- | ------------------- |
 | `domain_name`         | 기본 도메인          | `devport.kr`      |
 | `route53_zone_id`     | Hosted Zone ID       | `Z1234567890`     |
-| `ssh_allowed_cidr`    | SSH 허용 IP          | `1.2.3.4/32`      |
 | `db_password`         | PostgreSQL 비밀번호  | `secure-password` |
-| `private_subnet_cidr` | 프라이빗 서브넷 CIDR | `10.0.2.0/24`     |
+| `certbot_email`       | Let's Encrypt 이메일 | `you@example.com` |
 
 ### 선택
 
@@ -439,6 +490,19 @@ GitHub Actions에서 AWS로의 키 없는(keyless) 인증을 설정합니다:
 | ---------------------- | ------------------------ | ------ |
 | `psycopg2_layer_arn` | Lambda PostgreSQL 레이어 | `""` |
 | `alarm_email`        | CloudWatch 알림 이메일   | `""` |
+
+## 보안 참고사항
+
+- EC2는 프라이빗 서브넷 (퍼블릭 IP 없음)
+- EC2 보안 그룹은 Proxy 보안 그룹에서만 :8080 인바운드 허용 (0.0.0.0/0 차단)
+- Proxy EC2가 유일한 퍼블릭 진입점 (Elastic IP + TLS 터미네이션)
+- PostgreSQL은 VPC 내부에서만 접근 가능
+- Lambda는 프라이빗 IP로 DB 연결
+- SSM Session Manager를 통한 접근 (인터넷에서 직접 SSH 불가)
+- 모든 S3 버킷 퍼블릭 접근 차단
+- EC2에 IMDSv2 필수
+- EBS 볼륨 암호화
+- GitHub Actions OIDC로 키 없는 CI/CD (장기 AWS 키 불필요)
 
 ## 유지보수
 
@@ -449,6 +513,15 @@ GitHub Actions에서 AWS로의 키 없는(keyless) 인증을 설정합니다:
 ```bash
 # 수동 백업
 sudo /opt/scripts/backup.sh
+```
+
+### SSL 인증서 갱신
+
+Proxy EC2에서 cron으로 매일 오전 2시에 자동 갱신됩니다:
+
+```bash
+# 수동 갱신
+sudo certbot renew --post-hook 'systemctl reload nginx'
 ```
 
 ### Lambda 코드 업데이트
@@ -466,13 +539,19 @@ aws lambda update-function-code \
 
 ## 트러블슈팅
 
-### EC2에 SSH 접속이 안 되는 경우
+### EC2에 접속이 안 되는 경우
 
 EC2는 프라이빗 서브넷에 있습니다. SSM Session Manager를 사용하세요:
 
 ```bash
 aws ssm start-session --target <instance-id>
 ```
+
+### Proxy에서 502 Bad Gateway
+
+1. 프라이빗 EC2의 Docker 컨테이너 실행 중인지 확인: `docker ps`
+2. EC2 보안 그룹에서 Proxy SG → :8080 허용 확인
+3. Proxy nginx 에러 로그 확인: `sudo tail -20 /var/log/nginx/error.log`
 
 ### Lambda가 DB에 연결되지 않는 경우
 
@@ -490,18 +569,6 @@ aws ssm start-session --target <instance-id>
 1. S3 버킷 정책 확인
 2. OAC 설정 확인
 3. `index.html` 존재 여부 확인
-
-## 보안 참고사항
-
-- EC2는 프라이빗 서브넷 (퍼블릭 IP 없음)
-- PostgreSQL은 VPC 내부에서만 접근 가능
-- Lambda는 프라이빗 IP로 DB 연결
-- SSM Session Manager를 통한 SSH (인터넷에서 직접 SSH 불가)
-- 모든 S3 버킷 퍼블릭 접근 차단
-- EC2에 IMDSv2 필수
-- EBS 볼륨 암호화
-- DB 비밀번호는 Lambda 환경 변수로 전달
-- GitHub Actions OIDC로 키 없는 CI/CD (장기 AWS 키 불필요)
 
 ## 라이선스
 

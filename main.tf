@@ -65,7 +65,6 @@ module "acm" {
   project_name    = var.project_name
   environment     = var.environment
   domain_name     = var.domain_name
-  api_domain      = local.api_domain
   route53_zone_id = local.route53_zone_id
   create_www_cert = true
 }
@@ -119,20 +118,20 @@ module "ec2" {
 }
 
 #------------------------------------------------------------------------------
-# NLB Module
+# Public Proxy Module
 #------------------------------------------------------------------------------
-module "nlb" {
-  source = "./modules/nlb"
+module "proxy" {
+  source = "./modules/proxy"
 
-  project_name         = var.project_name
-  environment          = var.environment
-  vpc_id               = module.networking.vpc_id
-  subnet_id            = module.networking.public_subnet_id
-  ec2_instance_id      = module.ec2.instance_id
-  certificate_arn      = module.acm.api_validated_certificate_arn
-  enable_http_listener = false
+  project_name      = var.project_name
+  environment       = var.environment
+  subnet_id         = module.networking.public_subnet_id
+  security_group_id = module.networking.proxy_security_group_id
+  api_domain        = local.api_domain
+  backend_ip        = module.ec2.instance_private_ip
+  certbot_email     = var.certbot_email
 
-  depends_on = [module.ec2, module.acm]
+  depends_on = [module.ec2, module.networking]
 }
 
 #------------------------------------------------------------------------------
@@ -193,17 +192,13 @@ resource "aws_route53_record" "frontend_www" {
   }
 }
 
-# API record (NLB)
+# API record (Proxy Elastic IP)
 resource "aws_route53_record" "api" {
   zone_id = local.route53_zone_id
   name    = local.api_domain
   type    = "A"
-
-  alias {
-    name                   = module.nlb.nlb_dns_name
-    zone_id                = module.nlb.nlb_zone_id
-    evaluate_target_health = true
-  }
+  ttl     = 300
+  records = [module.proxy.elastic_ip]
 }
 
 #------------------------------------------------------------------------------

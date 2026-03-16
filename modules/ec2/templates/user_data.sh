@@ -228,7 +228,6 @@ for i in {1..5}; do
         --non-interactive \
         --agree-tos \
         -m ${certbot_email} \
-        --dns-route53-propagation-seconds 30 \
     && break
     echo "Certbot attempt $i failed, waiting 30s before retry..."
     sleep 30

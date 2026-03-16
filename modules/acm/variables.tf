@@ -13,11 +13,6 @@ variable "domain_name" {
   type        = string
 }
 
-variable "api_domain" {
-  description = "API origin domain name for the regional certificate"
-  type        = string
-}
-
 variable "create_www_cert" {
   description = "Include www subdomain in certificate"
   type        = bool

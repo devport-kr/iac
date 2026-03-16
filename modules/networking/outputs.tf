@@ -43,6 +43,11 @@ output "nat_instance_public_ip" {
   value       = aws_instance.nat.public_ip
 }
 
+output "proxy_security_group_id" {
+  description = "ID of the proxy security group"
+  value       = aws_security_group.proxy.id
+}
+
 output "ec2_security_group_id" {
   description = "ID of the EC2 security group"
   value       = aws_security_group.ec2.id

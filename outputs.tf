@@ -57,22 +57,22 @@ output "cloudfront_domain_name" {
   value       = module.s3_cloudfront.cloudfront_domain_name
 }
 
-output "api_certificate_arn" {
-  description = "Regional ACM certificate ARN for api.devport.kr"
-  value       = module.acm.api_validated_certificate_arn
-}
-
 output "backup_bucket_name" {
   description = "Name of the backup S3 bucket"
   value       = module.s3_cloudfront.backup_bucket_name
 }
 
 #------------------------------------------------------------------------------
-# NLB Outputs
+# Proxy Outputs
 #------------------------------------------------------------------------------
-output "nlb_dns_name" {
-  description = "DNS name of the NLB"
-  value       = module.nlb.nlb_dns_name
+output "proxy_instance_id" {
+  description = "ID of the proxy EC2 instance"
+  value       = module.proxy.instance_id
+}
+
+output "proxy_elastic_ip" {
+  description = "Elastic IP of the public proxy"
+  value       = module.proxy.elastic_ip
 }
 
 #------------------------------------------------------------------------------
@@ -138,23 +138,28 @@ output "deployment_info" {
 
     Connect via SSM: aws ssm start-session --target ${module.ec2.instance_id}
 
+    Proxy Instance ID: ${module.proxy.instance_id}
+    Proxy Elastic IP: ${module.proxy.elastic_ip}
+
     NEXT STEPS:
     -----------
-    1. Connect to EC2 via SSM Session Manager:
+    1. Connect to app EC2 via SSM Session Manager:
        aws ssm start-session --target ${module.ec2.instance_id}
 
     2. Deploy your docker-compose.yml to /opt/devport/:
        cd /opt/devport
        sudo cp .env.template .env
        sudo vim .env  # Set POSTGRES_PASSWORD and other secrets
-       # Upload your docker-compose.yml
        docker-compose up -d
 
-    3. Deploy frontend:
+    3. Connect to proxy EC2 via SSM:
+       aws ssm start-session --target ${module.proxy.instance_id}
+
+    4. Deploy frontend:
        aws s3 sync ./build s3://${module.s3_cloudfront.frontend_bucket_id}
        aws cloudfront create-invalidation --distribution-id ${module.s3_cloudfront.cloudfront_distribution_id} --paths "/*"
 
-    4. Test the crawler:
+    5. Test the crawler:
        aws lambda invoke --function-name ${module.lambda_crawler.function_name} response.json
        cat response.json
 

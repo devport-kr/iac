@@ -23,7 +23,7 @@ resource "aws_internet_gateway" "main" {
 }
 
 #------------------------------------------------------------------------------
-# Public Subnet (for NAT Instance and NLB)
+# Public Subnet (for NAT Instance and Proxy EC2)
 #------------------------------------------------------------------------------
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
@@ -243,18 +243,15 @@ resource "aws_route_table_association" "private" {
 }
 
 #------------------------------------------------------------------------------
-# Security Group for EC2 Instance
+# Security Group for Public Proxy
 #------------------------------------------------------------------------------
-resource "aws_security_group" "ec2" {
-  name        = "${var.project_name}-${var.environment}-ec2-sg"
-  description = "Security group for DevPort EC2 instance"
+resource "aws_security_group" "proxy" {
+  name        = "${var.project_name}-${var.environment}-proxy-sg"
+  description = "Security group for public reverse proxy"
   vpc_id      = aws_vpc.main.id
 
-  # HTTPS from NLB — must be 0.0.0.0/0 because preserve_client_ip = true on the
-  # NLB target group means packets arrive with the real internet source IP, not a
-  # VPC IP. Restricting to var.vpc_cidr would silently drop all real traffic.
   ingress {
-    description = "HTTPS from NLB (real client IPs pass through)"
+    description = "HTTPS from internet"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -262,13 +259,46 @@ resource "aws_security_group" "ec2" {
   }
 
   ingress {
-    description = "Application traffic from NLB after TLS termination"
-    from_port   = 8080
-    to_port     = 8080
+    description = "HTTP from internet (redirect to HTTPS)"
+    from_port   = 80
+    to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  egress {
+    description = "All outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-proxy-sg"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+#------------------------------------------------------------------------------
+# Security Group for EC2 Instance
+#------------------------------------------------------------------------------
+resource "aws_security_group" "ec2" {
+  name        = "${var.project_name}-${var.environment}-ec2-sg"
+  description = "Security group for DevPort EC2 instance"
+  vpc_id      = aws_vpc.main.id
+
+  # App traffic from proxy (proxy terminates TLS, forwards HTTP to 8080)
+  ingress {
+    description     = "HTTP from proxy"
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
+    security_groups = [aws_security_group.proxy.id]
+  }
 
   # PostgreSQL from Lambda security group
   ingress {
