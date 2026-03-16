@@ -58,19 +58,28 @@ Client ──▶ Route 53 (api.devport.kr)
 
 ## 구성 요소
 
-| 구성 요소                     | 목적                                              |
-| ----------------------------- | ------------------------------------------------- |
-| **Route 53**            | DNS 관리                                          |
-| **CloudFront**          | CDN + 프론트엔드 HTTPS                            |
-| **S3**                  | 정적 프론트엔드 호스팅                            |
-| **Proxy EC2**           | 퍼블릭 서브넷의 리버스 프록시 + TLS 터미네이션    |
-| **NAT Instance**        | 프라이빗 서브넷의 아웃바운드 인터넷               |
-| **EC2**                 | Docker Compose (앱 + PostgreSQL), 프라이빗 서브넷 |
-| **Lambda**              | VPC 연결 크롤러, DB 직접 접근                     |
-| **EventBridge**         | 크롤러 크론 스케줄러                              |
-| **GitHub Actions OIDC** | CI/CD 인증 (devport-web → S3/CloudFront 배포)    |
-| **Nginx (Private)**     | 리버스 프록시, Blue-Green 트래픽 전환             |
-| **Redis**               | 캐시 및 세션 저장소                               |
+| 구성 요소                     | 목적                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| **Route 53**            | DNS 관리                                                                 |
+| **CloudFront**          | CDN + 프론트엔드 HTTPS                                                   |
+| **S3**                  | 정적 프론트엔드 호스팅                                                   |
+| **Proxy EC2**           | 퍼블릭 서브넷의 리버스 프록시 + TLS 터미네이션                           |
+| **NAT Instance**        | 프라이빗 서브넷의 아웃바운드 인터넷                                      |
+| **EC2 (Server)**        | Docker Compose (Nginx, Spring Boot Native Image, PostgreSQL, Redis) 운영 |
+| **Lambda**              | VPC 연결 크롤러, DB 직접 접근                                            |
+| **EventBridge**         | 크롤러 크론 스케줄러                                                     |
+| **GitHub Actions OIDC** | CI/CD 인증 (devport-web → S3/CloudFront 배포)                           |
+
+### Private EC2 Docker Compose 구성
+
+| 컨테이너                    | 이미지                                          | 포트        | 역할                           |
+| --------------------------- | ----------------------------------------------- | ----------- | ------------------------------ |
+| `devport-nginx`           | `nginx:1.27-alpine`                           | 8080→80    | 리버스 프록시, Blue-Green 전환 |
+| `devport-api-blue`        | `ghcr.io/.../devport-api:latest-native-arm64` | 8080 (내부) | API 서버 (운영 슬롯)           |
+| `devport-api-green`       | `ghcr.io/.../devport-api:latest-native-arm64` | 8080 (내부) | API 서버 (배포 슬롯)           |
+| `devport-postgres-native` | `pgvector/pgvector:pg16`                      | 5432→5432  | PostgreSQL + pgvector          |
+| `devport-redis-native`    | `redis:7-alpine`                              | 6379→6379  | 캐시 및 세션 저장소            |
+| `devport-pgadmin-native`  | `dpage/pgadmin4:latest`                       | 5050→80    | DB 관리 UI (유지 보수용)       |
 
 ---
 
@@ -270,8 +279,6 @@ terraform apply
 
 ## Terraform Apply 후 체크리스트
 
-`terraform apply` 성공 **후** 아래 단계를 완료하세요:
-
 ### 1. 도메인 네임서버 업데이트 (새 Route 53 Zone 생성 시)
 
 - [ ] Terraform 출력에서 네임서버 확인: `terraform output route53_nameservers`
@@ -430,10 +437,10 @@ VPC, 퍼블릭/프라이빗 서브넷, NAT Instance를 생성합니다.
 - Route 53 A 레코드가 Elastic IP를 직접 가리킴
 - 프라이빗 EC2의 :8080으로 HTTP 프록시
 
-| 출력              | 설명                  |
-| ----------------- | --------------------- |
-| `instance_id`   | Proxy 인스턴스 ID     |
-| `elastic_ip`    | Proxy Elastic IP 주소 |
+| 출력            | 설명                  |
+| --------------- | --------------------- |
+| `instance_id` | Proxy 인스턴스 ID     |
+| `elastic_ip`  | Proxy Elastic IP 주소 |
 
 ### EC2 모듈
 
@@ -477,12 +484,12 @@ GitHub Actions에서 AWS로의 키 없는(keyless) 인증을 설정합니다:
 
 ### 필수 terraform.tfvars
 
-| 변수                    | 설명                 | 예시                |
-| ----------------------- | -------------------- | ------------------- |
-| `domain_name`         | 기본 도메인          | `devport.kr`      |
-| `route53_zone_id`     | Hosted Zone ID       | `Z1234567890`     |
-| `db_password`         | PostgreSQL 비밀번호  | `secure-password` |
-| `certbot_email`       | Let's Encrypt 이메일 | `you@example.com` |
+| 변수                | 설명                 | 예시                |
+| ------------------- | -------------------- | ------------------- |
+| `domain_name`     | 기본 도메인          | `devport.kr`      |
+| `route53_zone_id` | Hosted Zone ID       | `Z1234567890`     |
+| `db_password`     | PostgreSQL 비밀번호  | `secure-password` |
+| `certbot_email`   | Let's Encrypt 이메일 | `you@example.com` |
 
 ### 선택
 
@@ -498,7 +505,7 @@ GitHub Actions에서 AWS로의 키 없는(keyless) 인증을 설정합니다:
 - Proxy EC2가 유일한 퍼블릭 진입점 (Elastic IP + TLS 터미네이션)
 - PostgreSQL은 VPC 내부에서만 접근 가능
 - Lambda는 프라이빗 IP로 DB 연결
-- SSM Session Manager를 통한 접근 (인터넷에서 직접 SSH 불가)
+- SSM Session Manager를 통한 접근 (직접 SSH 불가)
 - 모든 S3 버킷 퍼블릭 접근 차단
 - EC2에 IMDSv2 필수
 - EBS 볼륨 암호화
@@ -508,7 +515,7 @@ GitHub Actions에서 AWS로의 키 없는(keyless) 인증을 설정합니다:
 
 ### 데이터베이스 백업
 
-매일 오전 3시에 Docker를 통해 자동 백업됩니다:
+매일 오전 3시에 Docker를 통해 자동 백업:
 
 ```bash
 # 수동 백업
@@ -517,7 +524,7 @@ sudo /opt/scripts/backup.sh
 
 ### SSL 인증서 갱신
 
-Proxy EC2에서 cron으로 매일 오전 2시에 자동 갱신됩니다:
+Proxy EC2에서 cron으로 매일 오전 2시에 자동 갱신:
 
 ```bash
 # 수동 갱신
@@ -541,7 +548,7 @@ aws lambda update-function-code \
 
 ### EC2에 접속이 안 되는 경우
 
-EC2는 프라이빗 서브넷에 있습니다. SSM Session Manager를 사용하세요:
+EC2는 프라이빗 서브넷. public ip 주소 x. SSM Session Manager 사용:
 
 ```bash
 aws ssm start-session --target <instance-id>
