@@ -88,12 +88,22 @@ output "crawler_function_arn" {
   value       = module.lambda_crawler.function_arn
 }
 
+output "crawler_ecr_repository_url" {
+  description = "ECR repository URL for the crawler image"
+  value       = module.lambda_crawler.ecr_repository_url
+}
+
 #------------------------------------------------------------------------------
 # Route 53 Outputs
 #------------------------------------------------------------------------------
 output "github_actions_role_arn" {
   description = "IAM role ARN for GitHub Actions frontend deployment"
   value       = aws_iam_role.github_actions_frontend.arn
+}
+
+output "github_actions_crawler_role_arn" {
+  description = "IAM role ARN for GitHub Actions crawler deployment"
+  value       = aws_iam_role.github_actions_crawler.arn
 }
 
 output "route53_zone_id" {

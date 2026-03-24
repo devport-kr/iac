@@ -127,27 +127,60 @@ variable "db_password" {
 # Lambda Crawler Configuration
 #------------------------------------------------------------------------------
 variable "crawler_schedule" {
-  description = "EventBridge schedule expression for crawler (e.g., rate(6 hours))"
+  description = "EventBridge schedule expression for all crawler sources"
   type        = string
-  default     = "rate(6 hours)"
+  default     = "cron(0 15 * * ? *)" # daily at midnight KST (UTC+9)
 }
 
 variable "crawler_timeout" {
-  description = "Lambda crawler timeout in seconds"
+  description = "Lambda crawler timeout in seconds (max 900)"
   type        = number
-  default     = 300
+  default     = 900
 }
 
 variable "crawler_memory_size" {
   description = "Lambda crawler memory size in MB"
   type        = number
-  default     = 256
+  default     = 1024
 }
 
-variable "psycopg2_layer_arn" {
-  description = "ARN of psycopg2 Lambda layer for PostgreSQL access"
+variable "crawler_openai_api_key" {
+  description = "OpenAI API key for crawler LLM summarization"
   type        = string
   default     = ""
+  sensitive   = true
+}
+
+variable "crawler_github_token" {
+  description = "GitHub API token for crawler"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "crawler_artificial_analysis_api_key" {
+  description = "Artificial Analysis API key for LLM rankings"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "crawler_discord_webhook_url" {
+  description = "Discord webhook URL for crawler notifications"
+  type        = string
+  default     = ""
+}
+
+variable "crawler_extra_env_vars" {
+  description = "Additional environment variables for the crawler Lambda"
+  type        = map(string)
+  default     = {}
+}
+
+variable "crawler_github_repo" {
+  description = "GitHub repo (org/name) for crawler CI/CD OIDC access"
+  type        = string
+  default     = "devport-kr/devport-crawler"
 }
 
 #------------------------------------------------------------------------------

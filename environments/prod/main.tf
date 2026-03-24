@@ -21,16 +21,16 @@ module "devport" {
   route53_zone_id     = var.route53_zone_id
 
   # VPC
-  vpc_cidr            = "10.1.0.0/16"  # Different CIDR from dev
+  vpc_cidr            = "10.1.0.0/16" # Different CIDR from dev
   public_subnet_cidr  = "10.1.1.0/24"
   private_subnet_cidr = "10.1.2.0/24"
   availability_zone   = "ap-northeast-2a"
 
   # EC2 - production size
-  instance_type    = "t4g.small"
-  create_key_pair  = true
-  ec2_volume_size  = 30  # Larger for prod
-  ec2_volume_type  = "gp3"
+  instance_type   = "t4g.small"
+  create_key_pair = true
+  ec2_volume_size = 30 # Larger for prod
+  ec2_volume_type = "gp3"
 
   # Database
   db_name     = "devport_db"
@@ -41,17 +41,29 @@ module "devport" {
   certbot_email = var.certbot_email
 
   # Lambda Crawler
-  crawler_schedule    = "rate(6 hours)"  # As specified in architecture
-  crawler_timeout     = 300
-  crawler_memory_size = 512  # More memory for prod
+  crawler_schedule    = "cron(0 15 * * ? *)" # daily at midnight KST
+  crawler_timeout     = 900
+  crawler_memory_size = 1024
+
+  # Crawler API keys
+  crawler_openai_api_key              = var.crawler_openai_api_key
+  crawler_github_token                = var.crawler_github_token
+  crawler_artificial_analysis_api_key = var.crawler_artificial_analysis_api_key
+
+  # Crawler webhooks
+  crawler_discord_webhook_url = var.crawler_discord_webhook_url
+  crawler_webhook_url         = var.crawler_webhook_url
+  crawler_webhook_secret      = var.crawler_webhook_secret
+  crawler_extra_env_vars      = var.crawler_extra_env_vars
+  crawler_github_repo         = var.crawler_github_repo
 
   # CloudFront
-  cloudfront_price_class    = "PriceClass_200"  # Better coverage for prod
+  cloudfront_price_class    = "PriceClass_200" # Better coverage for prod
   enable_cloudfront_logging = true
 
   # Backups
   enable_backup_bucket  = true
-  backup_retention_days = 7  # Week of backups
+  backup_retention_days = 7 # Week of backups
 
   # Monitoring
   enable_cloudwatch_alarms = true
@@ -95,6 +107,58 @@ variable "certbot_email" {
   type        = string
 }
 
+variable "crawler_openai_api_key" {
+  description = "OpenAI API key for crawler"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "crawler_github_token" {
+  description = "GitHub API token for crawler"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "crawler_artificial_analysis_api_key" {
+  description = "Artificial Analysis API key for crawler"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "crawler_discord_webhook_url" {
+  description = "Discord webhook URL for crawler notifications"
+  type        = string
+  default     = ""
+}
+
+variable "crawler_webhook_url" {
+  description = "Webhook URL for crawler completion signals"
+  type        = string
+  default     = ""
+}
+
+variable "crawler_webhook_secret" {
+  description = "HMAC secret for crawler webhook"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "crawler_extra_env_vars" {
+  description = "Additional environment variables for crawler"
+  type        = map(string)
+  default     = {}
+}
+
+variable "crawler_github_repo" {
+  description = "GitHub repo for crawler CI/CD OIDC"
+  type        = string
+  default     = "devport-kr/devport-crawler"
+}
+
 #------------------------------------------------------------------------------
 # Outputs
 #------------------------------------------------------------------------------
@@ -124,6 +188,14 @@ output "cloudfront_distribution_id" {
 
 output "crawler_function_name" {
   value = module.devport.crawler_function_name
+}
+
+output "crawler_ecr_repository_url" {
+  value = module.devport.crawler_ecr_repository_url
+}
+
+output "github_actions_crawler_role_arn" {
+  value = module.devport.github_actions_crawler_role_arn
 }
 
 output "ssm_connect_command" {

@@ -18,9 +18,14 @@ output "log_group_name" {
   value       = aws_cloudwatch_log_group.crawler.name
 }
 
-output "eventbridge_rule_arn" {
-  description = "ARN of the EventBridge rule"
-  value       = aws_cloudwatch_event_rule.crawler_schedule.arn
+output "ecr_repository_url" {
+  description = "ECR repository URL for the crawler image"
+  value       = aws_ecr_repository.crawler.repository_url
+}
+
+output "ecr_repository_arn" {
+  description = "ECR repository ARN"
+  value       = aws_ecr_repository.crawler.arn
 }
 
 output "function_url" {

@@ -1,3 +1,6 @@
+#------------------------------------------------------------------------------
+# General
+#------------------------------------------------------------------------------
 variable "project_name" {
   description = "Name of the project"
   type        = string
@@ -13,22 +16,25 @@ variable "api_domain" {
   type        = string
 }
 
+#------------------------------------------------------------------------------
+# Lambda Configuration
+#------------------------------------------------------------------------------
 variable "schedule_expression" {
-  description = "EventBridge schedule expression"
+  description = "EventBridge schedule expression (applied to all crawler sources)"
   type        = string
-  default     = "rate(6 hours)"
+  default     = "cron(0 15 * * ? *)" # daily at midnight KST (UTC+9)
 }
 
 variable "timeout" {
-  description = "Lambda timeout in seconds"
+  description = "Lambda timeout in seconds (max 900)"
   type        = number
-  default     = 300
+  default     = 900
 }
 
 variable "memory_size" {
   description = "Lambda memory size in MB"
   type        = number
-  default     = 256
+  default     = 1024
 }
 
 variable "enable_function_url" {
@@ -37,8 +43,24 @@ variable "enable_function_url" {
   default     = false
 }
 
+#------------------------------------------------------------------------------
+# VPC Configuration
+#------------------------------------------------------------------------------
+variable "subnet_ids" {
+  description = "List of subnet IDs for Lambda VPC configuration"
+  type        = list(string)
+}
+
+variable "security_group_ids" {
+  description = "List of security group IDs for Lambda VPC configuration"
+  type        = list(string)
+}
+
+#------------------------------------------------------------------------------
+# Database Connection
+#------------------------------------------------------------------------------
 variable "db_host" {
-  description = "PostgreSQL host (EC2 Elastic IP)"
+  description = "PostgreSQL host (EC2 private IP)"
   type        = string
 }
 
@@ -64,18 +86,57 @@ variable "db_password" {
   sensitive   = true
 }
 
-variable "psycopg2_layer_arn" {
-  description = "ARN of psycopg2 Lambda layer for PostgreSQL access"
+#------------------------------------------------------------------------------
+# API Keys (sensitive)
+#------------------------------------------------------------------------------
+variable "openai_api_key" {
+  description = "OpenAI API key for LLM summarization"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "github_token" {
+  description = "GitHub API token for rate limits and project data"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "artificial_analysis_api_key" {
+  description = "Artificial Analysis API key for LLM rankings"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+#------------------------------------------------------------------------------
+# Optional Webhooks
+#------------------------------------------------------------------------------
+variable "discord_webhook_url" {
+  description = "Discord webhook URL for failed content fetch notifications"
   type        = string
   default     = ""
 }
 
-variable "subnet_ids" {
-  description = "List of subnet IDs for Lambda VPC configuration"
-  type        = list(string)
+variable "crawler_webhook_url" {
+  description = "Webhook URL for crawler completion signals"
+  type        = string
+  default     = ""
 }
 
-variable "security_group_ids" {
-  description = "List of security group IDs for Lambda VPC configuration"
-  type        = list(string)
+variable "crawler_webhook_secret" {
+  description = "HMAC secret for crawler webhook signing"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+#------------------------------------------------------------------------------
+# Extra Environment Variables
+#------------------------------------------------------------------------------
+variable "extra_env_vars" {
+  description = "Additional environment variables to pass to the Lambda (overrides defaults)"
+  type        = map(string)
+  default     = {}
 }

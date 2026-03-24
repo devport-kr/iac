@@ -148,16 +148,26 @@ module "lambda_crawler" {
   memory_size         = var.crawler_memory_size
   enable_function_url = var.environment == "dev"
 
-  # VPC configuration (private subnet with NAT Gateway)
+  # VPC configuration (private subnet with NAT instance)
   subnet_ids         = [module.networking.private_subnet_id]
   security_group_ids = [module.networking.lambda_security_group_id]
 
   # Database connection (via EC2 private IP)
-  db_host            = module.ec2.instance_private_ip
-  db_name            = var.db_name
-  db_user            = var.db_user
-  db_password        = var.db_password
-  psycopg2_layer_arn = var.psycopg2_layer_arn
+  db_host     = module.ec2.instance_private_ip
+  db_name     = var.db_name
+  db_user     = var.db_user
+  db_password = var.db_password
+
+  # API keys
+  openai_api_key              = var.crawler_openai_api_key
+  github_token                = var.crawler_github_token
+  artificial_analysis_api_key = var.crawler_artificial_analysis_api_key
+
+  # Webhooks
+  discord_webhook_url = var.crawler_discord_webhook_url
+
+  # Extra env vars (override crawler defaults)
+  extra_env_vars = var.crawler_extra_env_vars
 
   depends_on = [module.ec2, module.networking]
 }

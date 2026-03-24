@@ -188,15 +188,15 @@ resource "aws_instance" "main" {
   }
 
   user_data = base64encode(templatefile("${path.module}/templates/user_data.sh", {
-    project_name    = var.project_name
-    environment     = var.environment
-    domain_name     = var.domain_name
-    api_domain      = var.api_domain
-    db_name         = var.db_name
-    db_user         = var.db_user
-    certbot_email   = var.certbot_email
-    aws_region      = data.aws_region.current.name
-    backup_bucket   = var.backup_bucket_name
+    project_name  = var.project_name
+    environment   = var.environment
+    domain_name   = var.domain_name
+    api_domain    = var.api_domain
+    db_name       = var.db_name
+    db_user       = var.db_user
+    certbot_email = var.certbot_email
+    aws_region    = data.aws_region.current.name
+    backup_bucket = var.backup_bucket_name
   }))
 
   metadata_options {
