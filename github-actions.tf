@@ -138,7 +138,7 @@ resource "aws_iam_role_policy" "github_actions_crawler" {
           "lambda:GetFunction",
           "lambda:GetFunctionConfiguration"
         ]
-        Resource = module.lambda_crawler.function_arn
+        Resource = module.lambda_crawler.function_arns
       }
     ]
   })

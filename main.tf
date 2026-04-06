@@ -145,7 +145,7 @@ module "lambda_crawler" {
   api_domain          = local.api_domain
   schedule_expression = var.crawler_schedule
   timeout             = var.crawler_timeout
-  memory_size         = var.crawler_memory_size
+  crawler_tiers       = var.crawler_tiers
   enable_function_url = var.environment == "dev"
 
   # VPC configuration (private subnet with NAT instance)

@@ -68,20 +68,31 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc" {
 }
 
 #------------------------------------------------------------------------------
-# Lambda Function (Docker/ECR)
+# Lambda Functions (Docker/ECR) — one per memory tier
 #
 # BOOTSTRAP: On first deploy, push an image to ECR before running terraform apply:
 #   aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin <account>.dkr.ecr.ap-northeast-2.amazonaws.com
 #   docker build -t <account>.dkr.ecr.ap-northeast-2.amazonaws.com/devport-<env>-crawler:latest .
 #   docker push <account>.dkr.ecr.ap-northeast-2.amazonaws.com/devport-<env>-crawler:latest
 #------------------------------------------------------------------------------
+locals {
+  # Flatten: source name → tier key
+  source_to_tier = merge([
+    for tier, cfg in var.crawler_tiers : {
+      for source in cfg.sources : source => tier
+    }
+  ]...)
+}
+
 resource "aws_lambda_function" "crawler" {
-  function_name = "${var.project_name}-${var.environment}-crawler"
+  for_each = var.crawler_tiers
+
+  function_name = "${var.project_name}-${var.environment}-${each.key}"
   role          = aws_iam_role.lambda.arn
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.crawler.repository_url}:latest"
   timeout       = var.timeout
-  memory_size   = var.memory_size
+  memory_size   = each.value.memory_size
   architectures = ["arm64"]
 
   environment {
@@ -114,41 +125,29 @@ resource "aws_lambda_function" "crawler" {
   }
 
   tags = {
-    Name = "${var.project_name}-${var.environment}-crawler"
+    Name = "${var.project_name}-${var.environment}-${each.key}"
   }
 }
 
 #------------------------------------------------------------------------------
-# CloudWatch Log Group
+# CloudWatch Log Groups — one per tier
 #------------------------------------------------------------------------------
 resource "aws_cloudwatch_log_group" "crawler" {
-  name              = "/aws/lambda/${aws_lambda_function.crawler.function_name}"
+  for_each = var.crawler_tiers
+
+  name              = "/aws/lambda/${aws_lambda_function.crawler[each.key].function_name}"
   retention_in_days = 14
 
   tags = {
-    Name = "${var.project_name}-${var.environment}-crawler-logs"
+    Name = "${var.project_name}-${var.environment}-${each.key}-logs"
   }
 }
 
 #------------------------------------------------------------------------------
-# EventBridge — one rule per crawler source, all fired daily in parallel
+# EventBridge — one rule per crawler source, routed to the correct Lambda tier
 #------------------------------------------------------------------------------
-locals {
-  crawler_sources = [
-    "devto",
-    "hashnode",
-    "reddit",
-    "hackernews",
-    "github",
-    "llm_rankings",
-    "llm_media_rankings",
-    "refresh_scores",
-    "port_sync",
-  ]
-}
-
 resource "aws_cloudwatch_event_rule" "crawler" {
-  for_each = toset(local.crawler_sources)
+  for_each = local.source_to_tier
 
   name                = "${var.project_name}-${var.environment}-crawler-${each.key}"
   description         = "Trigger crawler Lambda for source: ${each.key}"
@@ -160,11 +159,11 @@ resource "aws_cloudwatch_event_rule" "crawler" {
 }
 
 resource "aws_cloudwatch_event_target" "crawler" {
-  for_each = toset(local.crawler_sources)
+  for_each = local.source_to_tier
 
   rule      = aws_cloudwatch_event_rule.crawler[each.key].name
   target_id = "crawler-${each.key}"
-  arn       = aws_lambda_function.crawler.arn
+  arn       = aws_lambda_function.crawler[each.value].arn
 
   input = jsonencode({
     source = each.key
@@ -172,22 +171,22 @@ resource "aws_cloudwatch_event_target" "crawler" {
 }
 
 resource "aws_lambda_permission" "eventbridge" {
-  for_each = toset(local.crawler_sources)
+  for_each = local.source_to_tier
 
   statement_id  = "AllowEventBridge-${each.key}"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.crawler.function_name
+  function_name = aws_lambda_function.crawler[each.value].function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.crawler[each.key].arn
 }
 
 #------------------------------------------------------------------------------
-# Lambda Function URL (Optional — for manual invocation in dev)
+# Lambda Function URLs (Optional — for manual invocation in dev)
 #------------------------------------------------------------------------------
 resource "aws_lambda_function_url" "crawler" {
-  count = var.enable_function_url ? 1 : 0
+  for_each = var.enable_function_url ? var.crawler_tiers : {}
 
-  function_name      = aws_lambda_function.crawler.function_name
+  function_name      = aws_lambda_function.crawler[each.key].function_name
   authorization_type = "AWS_IAM"
 
   cors {

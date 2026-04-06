@@ -138,10 +138,26 @@ variable "crawler_timeout" {
   default     = 900
 }
 
-variable "crawler_memory_size" {
-  description = "Lambda crawler memory size in MB"
-  type        = number
-  default     = 1024
+variable "crawler_tiers" {
+  description = "Map of Lambda tier names to their memory and source configuration"
+  type = map(object({
+    memory_size = number
+    sources     = list(string)
+  }))
+  default = {
+    crawler-api = {
+      memory_size = 256
+      sources     = ["devto", "hashnode", "github", "llm_rankings", "llm_media_rankings", "refresh_scores"]
+    }
+    crawler-playwright = {
+      memory_size = 1024
+      sources     = ["reddit", "hackernews"]
+    }
+    port_sync = {
+      memory_size = 300
+      sources     = ["port_sync"]
+    }
+  }
 }
 
 variable "crawler_openai_api_key" {

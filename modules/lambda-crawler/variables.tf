@@ -31,10 +31,12 @@ variable "timeout" {
   default     = 900
 }
 
-variable "memory_size" {
-  description = "Lambda memory size in MB"
-  type        = number
-  default     = 1024
+variable "crawler_tiers" {
+  description = "Map of Lambda tier names to their memory and source configuration"
+  type = map(object({
+    memory_size = number
+    sources     = list(string)
+  }))
 }
 
 variable "enable_function_url" {

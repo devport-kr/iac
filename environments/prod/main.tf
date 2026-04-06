@@ -41,9 +41,8 @@ module "devport" {
   certbot_email = var.certbot_email
 
   # Lambda Crawler
-  crawler_schedule    = "cron(0 15 * * ? *)" # daily at midnight KST
-  crawler_timeout     = 900
-  crawler_memory_size = 1024
+  crawler_schedule = "cron(0 15 * * ? *)" # daily at midnight KST
+  crawler_timeout  = 900
 
   # Crawler API keys
   crawler_openai_api_key              = var.crawler_openai_api_key
@@ -186,8 +185,8 @@ output "cloudfront_distribution_id" {
   value = module.devport.cloudfront_distribution_id
 }
 
-output "crawler_function_name" {
-  value = module.devport.crawler_function_name
+output "crawler_function_names" {
+  value = module.devport.crawler_function_names
 }
 
 output "crawler_ecr_repository_url" {

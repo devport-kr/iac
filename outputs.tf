@@ -78,14 +78,14 @@ output "proxy_elastic_ip" {
 #------------------------------------------------------------------------------
 # Lambda Crawler Outputs
 #------------------------------------------------------------------------------
-output "crawler_function_name" {
-  description = "Name of the crawler Lambda function"
-  value       = module.lambda_crawler.function_name
+output "crawler_function_names" {
+  description = "Names of the crawler Lambda functions by memory tier"
+  value       = module.lambda_crawler.function_names
 }
 
-output "crawler_function_arn" {
-  description = "ARN of the crawler Lambda function"
-  value       = module.lambda_crawler.function_arn
+output "crawler_function_arns" {
+  description = "ARNs of all crawler Lambda functions"
+  value       = module.lambda_crawler.function_arns
 }
 
 output "crawler_ecr_repository_url" {
@@ -169,9 +169,10 @@ output "deployment_info" {
        aws s3 sync ./build s3://${module.s3_cloudfront.frontend_bucket_id}
        aws cloudfront create-invalidation --distribution-id ${module.s3_cloudfront.cloudfront_distribution_id} --paths "/*"
 
-    5. Test the crawler:
-       aws lambda invoke --function-name ${module.lambda_crawler.function_name} response.json
-       cat response.json
+    5. Test the crawlers:
+       aws lambda invoke --function-name ${var.project_name}-${var.environment}-crawler-api --payload '{"source":"devto"}' response.json
+       aws lambda invoke --function-name ${var.project_name}-${var.environment}-crawler-playwright --payload '{"source":"reddit"}' response.json
+       aws lambda invoke --function-name ${var.project_name}-${var.environment}-port_sync --payload '{"source":"port_sync"}' response.json
 
   EOT
 }
