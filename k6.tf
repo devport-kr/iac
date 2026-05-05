@@ -41,15 +41,16 @@ resource "aws_security_group" "k6" {
   }
 }
 
-# Open API SG :8080 to k6 SG. aws_vpc_security_group_ingress_rule coexists
-# safely with the inline ingress blocks in modules/networking under provider v5.
+# Open API SG :18080 to k6 SG — Spring direct, bypassing Nginx.
+# aws_vpc_security_group_ingress_rule coexists safely with the inline ingress
+# blocks in modules/networking under provider v5.
 resource "aws_vpc_security_group_ingress_rule" "api_from_k6" {
   security_group_id            = module.networking.ec2_security_group_id
   referenced_security_group_id = aws_security_group.k6.id
   ip_protocol                  = "tcp"
-  from_port                    = 8080
-  to_port                      = 8080
-  description                  = "HTTP from k6 load test instance"
+  from_port                    = 18080
+  to_port                      = 18080
+  description                  = "Spring direct (18080) from k6 load test instance"
 
   tags = {
     Name = "${var.project_name}-${var.environment}-api-from-k6"
@@ -143,6 +144,6 @@ output "k6_ssm_command" {
 }
 
 output "k6_target_api_internal" {
-  description = "Direct API endpoint (bypasses nginx)"
-  value       = "http://${module.ec2.instance_private_ip}:8080"
+  description = "Direct Spring endpoint (bypasses Nginx)"
+  value       = "http://${module.ec2.instance_private_ip}:18080"
 }
