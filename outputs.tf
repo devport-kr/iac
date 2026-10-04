@@ -171,7 +171,7 @@ output "deployment_info" {
 
     5. Test the crawlers:
        aws lambda invoke --function-name ${var.project_name}-${var.environment}-crawler-api --payload '{"source":"devto"}' response.json
-       aws lambda invoke --function-name ${var.project_name}-${var.environment}-crawler-playwright --payload '{"source":"reddit"}' response.json
+       aws lambda invoke --function-name ${var.project_name}-${var.environment}-crawler-playwright --payload '{"source":"hackernews"}' response.json
        aws lambda invoke --function-name ${var.project_name}-${var.environment}-port_sync --payload '{"source":"port_sync"}' response.json
 
   EOT

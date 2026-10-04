@@ -148,7 +148,7 @@ variable "crawler_tiers" {
   default = {
     crawler-api = {
       memory_size = 256
-      sources     = ["devto", "hashnode", "github", "llm_rankings", "llm_media_rankings", "refresh_scores"]
+      sources     = ["devto", "github", "llm_rankings", "llm_media_rankings", "refresh_scores"]
     }
     crawler-playwright = {
       # Chromium init alone needs ~1GB+; 1024 MB caused OOM-kill mid-launch
@@ -158,7 +158,7 @@ variable "crawler_tiers" {
       # Default 512 MB /tmp filled up after ~30-40 warm invocations from Chromium
       # user-data + cache, causing new launches to fail with ERR_INSUFFICIENT_RESOURCES.
       ephemeral_storage_size = 2048
-      sources                = ["reddit", "hackernews"]
+      sources                = ["hackernews"]
     }
     port_sync = {
       memory_size = 300
