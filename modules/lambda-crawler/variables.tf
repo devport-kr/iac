@@ -32,10 +32,11 @@ variable "timeout" {
 }
 
 variable "crawler_tiers" {
-  description = "Map of Lambda tier names to their memory and source configuration"
+  description = "Map of Lambda tier names to their memory, ephemeral storage, and source configuration"
   type = map(object({
-    memory_size = number
-    sources     = list(string)
+    memory_size            = number
+    ephemeral_storage_size = optional(number, 512)
+    sources                = list(string)
   }))
 }
 
