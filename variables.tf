@@ -139,10 +139,11 @@ variable "crawler_timeout" {
 }
 
 variable "crawler_tiers" {
-  description = "Map of Lambda tier names to their memory and source configuration"
+  description = "Map of Lambda tier names to their memory, ephemeral storage, and source configuration"
   type = map(object({
-    memory_size = number
-    sources     = list(string)
+    memory_size            = number
+    ephemeral_storage_size = optional(number, 512)
+    sources                = list(string)
   }))
   default = {
     crawler-api = {
@@ -150,8 +151,14 @@ variable "crawler_tiers" {
       sources     = ["devto", "hashnode", "github", "llm_rankings", "llm_media_rankings", "refresh_scores"]
     }
     crawler-playwright = {
-      memory_size = 1024
-      sources     = ["reddit", "hackernews"]
+      # Chromium init alone needs ~1GB+; 1024 MB caused OOM-kill mid-launch
+      # producing "Browser.new_page: Target page, context or browser has been closed".
+      # 3008 MB also gives ~2 vCPU which Chromium needs to render in time.
+      memory_size = 3008
+      # Default 512 MB /tmp filled up after ~30-40 warm invocations from Chromium
+      # user-data + cache, causing new launches to fail with ERR_INSUFFICIENT_RESOURCES.
+      ephemeral_storage_size = 2048
+      sources                = ["reddit", "hackernews"]
     }
     port_sync = {
       memory_size = 300

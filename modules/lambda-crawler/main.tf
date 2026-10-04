@@ -93,7 +93,18 @@ resource "aws_lambda_function" "crawler" {
   image_uri     = "${aws_ecr_repository.crawler.repository_url}:latest"
   timeout       = var.timeout
   memory_size   = each.value.memory_size
-  architectures = ["arm64"]
+  # x86_64 required: Playwright Chromium reliably works only on amd64 Lambda.
+  # ARM64 + Chromium on Lambda is documented as broken — browser launches but
+  # new_page() instantly fails with "Target page closed" regardless of base
+  # image (verified against python:slim-bookworm AND mcr.microsoft.com/playwright/python).
+  # All published working production examples (Stas Deep, Verçosa, Mamezou,
+  # Steele, browserless.io guide) use x86_64. ~20% Lambda cost penalty vs
+  # arm64, but our 3-tier crawler hits it for ~2 invokes/day = trivial.
+  architectures = ["x86_64"]
+
+  ephemeral_storage {
+    size = each.value.ephemeral_storage_size
+  }
 
   environment {
     variables = merge(
