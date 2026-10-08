@@ -140,12 +140,21 @@ resource "aws_cloudfront_cache_policy" "frontend_static" {
 resource "aws_cloudfront_function" "spa_rewrite" {
   name    = "${var.project_name}-${var.environment}-spa-rewrite"
   runtime = "cloudfront-js-1.0"
-  comment = "Rewrite SPA routes to index.html while leaving /api untouched"
+  comment = "Redirect www to the apex domain; rewrite SPA routes to index.html while leaving /api untouched"
   publish = true
   code    = <<-EOF
 function handler(event) {
     var request = event.request;
     var uri = request.uri;
+
+    // One host for search engines: www.${var.domain_name} -> ${var.domain_name}
+    if (request.headers.host && request.headers.host.value === "www.${var.domain_name}") {
+        return {
+            statusCode: 301,
+            statusDescription: "Moved Permanently",
+            headers: { location: { value: "https://${var.domain_name}" + uri } }
+        };
+    }
 
     if (uri === "/api" || uri.startsWith("/api/")) {
         return request;
